@@ -82,7 +82,7 @@ class MojoBinderTest {
   }
 
   @Test
-  void bindPreservesUserVersion() {
+  void bindUsesResolvedCullVersion() {
     MavenProject project = new MavenProject();
     Build build = new Build();
     project.setBuild(build);
@@ -90,7 +90,10 @@ class MojoBinderTest {
     MojoBinder.bind(project);
 
     Plugin plugin = findPlugin(build);
-    assertNotNull(plugin.getVersion());
+    assertEquals(
+        CullVersion.get(),
+        plugin.getVersion(),
+        "bound plugin version must track cull's own version, not a hardcoded literal");
   }
 
   @Test

@@ -23,7 +23,7 @@ public final class MojoBinder {
       plugin = new Plugin();
       plugin.setGroupId(CULL_PLUGIN_GROUP);
       plugin.setArtifactId(CULL_PLUGIN_ARTIFACT);
-      plugin.setVersion(resolveVersion());
+      plugin.setVersion(CullVersion.get());
       build.getPlugins().add(plugin);
       build.getPluginsAsMap().put(plugin.getKey(), plugin);
     } else {
@@ -44,11 +44,5 @@ public final class MojoBinder {
     e.setPhase(phase);
     e.setGoals(Collections.singletonList(goal));
     plugin.addExecution(e);
-  }
-
-  private static String resolveVersion() {
-    Package pkg = MojoBinder.class.getPackage();
-    String v = pkg == null ? null : pkg.getImplementationVersion();
-    return v == null ? "0.0.1-SNAPSHOT" : v;
   }
 }

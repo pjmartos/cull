@@ -78,9 +78,7 @@ public final class ConfigInjector {
   }
 
   private static String resolveExtensionVersion() {
-    Package pkg = ConfigInjector.class.getPackage();
-    String v = pkg == null ? null : pkg.getImplementationVersion();
-    return v == null ? "0.0.1-SNAPSHOT" : v;
+    return CullVersion.get();
   }
 
   private static String buildAgentArgs(MavenSession session) {
