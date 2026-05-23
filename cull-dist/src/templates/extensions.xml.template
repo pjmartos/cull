@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<extensions>
+    <extension>
+        <groupId>io.github.pjmartos.cull</groupId>
+        <artifactId>cull-extension</artifactId>
+        <version>${cull.version}</version>
+    </extension>
+</extensions>

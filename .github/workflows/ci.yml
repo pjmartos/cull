@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  unit:
+    name: Unit · Java ${{ matrix.java }} · Maven ${{ matrix.maven }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        java: ['11', '17', '21']
+        maven: ['3.6.3', '3.9.9']
+        include:
+          - os: windows-latest
+            java: '21'
+            maven: '3.9.9'
+          - os: ubuntu-latest
+            java: '25'
+            maven: '3.9.9'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+      - name: Set up Maven ${{ matrix.maven }}
+        uses: stCarolas/setup-maven@v5
+        with:
+          maven-version: ${{ matrix.maven }}
+      - name: Cache local Maven repository
+        uses: actions/cache@v5
+        with:
+          path: ~/.m2/repository
+          key: m2-${{ matrix.os }}-${{ matrix.java }}-${{ matrix.maven }}-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            m2-${{ matrix.os }}-${{ matrix.java }}-${{ matrix.maven }}-
+            m2-${{ matrix.os }}-${{ matrix.java }}-
+      - name: Build and unit-test
+        run: mvn -B install "-Dinvoker.skip=true"
+
+  integration:
+    name: IT · ${{ matrix.scenario }} · Java ${{ matrix.java }} · Maven ${{ matrix.maven }}
+    needs: unit
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        java: ['11', '17', '21', '25']
+        maven: ['3.6.3', '3.9.9']
+        scenario: ['02-prod-class-changed', '12-multi-module', '20-jdk-iohooks', '25-junit4-smoke', '26-testng-smoke', '21-perf-benchmark']
+        include:
+          - os: windows-latest
+            java: '21'
+            maven: '3.9.9'
+            scenario: '19-windows-atomic-commit'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+      - name: Set up Maven ${{ matrix.maven }}
+        uses: stCarolas/setup-maven@v5
+        with:
+          maven-version: ${{ matrix.maven }}
+      - name: Build and install
+        run: mvn -B install -DskipTests "-Dinvoker.skip=true" "-Dspotless.check.skip=true" "-Dpmd.skip=true" "-Dspotbugs.skip=true"
+      - name: Run IT scenario
+        run: mvn -B -pl cull-it integration-test "-Dinvoker.test=${{ matrix.scenario }}" "-Dspotless.check.skip=true" "-Dpmd.skip=true" "-Dspotbugs.skip=true"

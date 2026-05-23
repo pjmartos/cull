@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter
+        xmlns="https://github.com/spotbugs/filter/4.8.4"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="https://github.com/spotbugs/filter/4.8.4
+                            https://raw.githubusercontent.com/spotbugs/spotbugs/4.8.4/spotbugs/etc/findbugsfilter.xsd">
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Bug pattern="REC_CATCH_EXCEPTION"/>
+    </Match>
+    <Match>
+        <Class name="~.*\.RecorderHolder"/>
+        <Bug pattern="MS_EXPOSE_REP,MS_PKGPROTECT,MS_SHOULD_BE_FINAL,EI_EXPOSE_STATIC_REP2"/>
+    </Match>
+    <Match>
+        <Class name="~io\.pjmartos\.cull\.core\.Observations\$.*"/>
+        <Bug pattern="URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD"/>
+    </Match>
+    <Match>
+        <Class name="~io\.pjmartos\.cull\.core\.TestSelection\$.*"/>
+        <Bug pattern="URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD"/>
+    </Match>
+    <Match>
+        <Or>
+            <Class name="~io\.pjmartos\.cull\.agent\.IoHooks\$.*"/>
+            <Class name="~io\.pjmartos\.cull\.agent\.RecordingTransformer"/>
+        </Or>
+        <Bug pattern="PZLA_PREFER_ZERO_LENGTH_ARRAYS"/>
+    </Match>
+    <Match>
+        <Class name="~io\.pjmartos\.cull\.agent\.bytecode\..*"/>
+        <Bug pattern="DB_DUPLICATE_SWITCH_CLAUSES,UC_USELESS_CONDITION"/>
+    </Match>
+    <Match>
+        <Class name="~io\.pjmartos\.cull\.extension\.SelectionOutcome"/>
+        <Bug pattern="URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD"/>
+    </Match>
+</FindBugsFilter>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings>
+    <profiles>
+        <profile>
+            <id>it-repo</id>
+            <repositories>
+                <repository>
+                    <id>local-it</id>
+                    <url>file://${maven.repo.local}</url>
+                </repository>
+            </repositories>
+        </profile>
+    </profiles>
+    <activeProfiles>
+        <activeProfile>it-repo</activeProfile>
+    </activeProfiles>
+</settings>
