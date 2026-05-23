@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+set -uo pipefail
+
+GOALS=(spotless:apply spotless:check compile spotbugs:check pmd:check)
+MVN_ARGS=(-B -ntp -DskipTests -Dinvoker.skip=true)
+
+repo_root=$(git rev-parse --show-toplevel) || exit 1
+cd "$repo_root" || exit 1
+
+if [[ -x "./mvnw" ]]; then
+  MVN=(./mvnw)
+elif command -v mvn >/dev/null 2>&1; then
+  MVN=(mvn)
+else
+  echo "pre-push: Maven (mvn) not found on PATH; install it or set CULL_PREPUSH_MVN." >&2
+  exit 1
+fi
+
+tracked_fingerprint() { git diff HEAD | git hash-object --stdin; }
+
+before=$(tracked_fingerprint)
+
+echo "pre-push: running quality gate (${GOALS[*]}); no tests will run..."
+"${MVN[@]}" "${MVN_ARGS[@]}" "${GOALS[@]}"
+status=$?
+
+if [[ $status -ne 0 ]]; then
+  echo "pre-push: REJECTED - quality gate failed (mvn exit $status). Fix the issues and push again." >&2
+  exit 1
+fi
+
+after=$(tracked_fingerprint)
+
+if [[ "$before" != "$after" ]]; then
+  echo "pre-push: REJECTED - the quality gate modified tracked files:" >&2
+  git diff HEAD --name-only | sed 's/^/  /' >&2
+  echo "Review and commit these changes, then push again." >&2
+  exit 1
+fi
+
+echo "pre-push: quality gate passed; proceeding with push."
+exit 0
