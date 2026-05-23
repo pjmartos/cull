@@ -1,4 +1,9 @@
 # cull
+
+[![CI](https://github.com/pjmartos/cull/actions/workflows/ci.yml/badge.svg?branch=main&style=plastic)](https://github.com/pjmartos/cull/actions/workflows/ci.yml)
+[![maven-central](https://img.shields.io/maven-central/v/io.github.pjmartos.cull/cull-extension?style=plastic)](https://central.sonatype.com/artifact/io.github.pjmartos.cull/cull-extension)
+[![License](https://img.shields.io/github/license/pjmartos/cull?style=plastic)](LICENSE)
+
 `cull` is a Test Impact Analysis tool for Maven. Instead of running your whole suite on every build, it works out which tests a change can actually affect and runs only those. When it is not sure, it runs everything.
 
 `cull` never fails your build on its own. Test failures fail the build as usual, but any problem inside `cull` simply falls back to "run all tests and leave the cache alone".
