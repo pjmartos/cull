@@ -42,7 +42,7 @@ Register the core extension in `.mvn/extensions.xml` at the root of your reposit
   <extension>
     <groupId>io.github.pjmartos.cull</groupId>
     <artifactId>cull-extension</artifactId>
-    <version>${cull.version}</version>       <!-- Latest version at the time of this writing: 0.0.1 -->
+    <version>${cull.version}</version>       <!-- Latest version at the time of this writing: 0.0.2 -->
   </extension>
 </extensions>
 ```
@@ -54,7 +54,7 @@ If core extensions are not allowed in your environment, you can declare the `io.
   <plugin>
     <groupId>io.github.pjmartos.cull</groupId>
     <artifactId>cull-maven-plugin</artifactId>
-    <version>${cull.version}</version>       <!-- Latest version at the time of this writing: 0.0.1 -->
+    <version>${cull.version}</version>       <!-- Latest version at the time of this writing: 0.0.2 -->
     <executions>
       <execution>
         <id>default-select</id>
