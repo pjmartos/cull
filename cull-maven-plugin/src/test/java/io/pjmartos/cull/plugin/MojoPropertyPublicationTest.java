@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.pjmartos.cull.extension.CullProperties;
@@ -31,8 +30,9 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * Verifies how {@link CullSelectMojo} and {@link CullSelectItMojo} translate a {@link
  * SelectionOutcome} into published Maven project properties, covering both the wildcard and the
- * concrete-selection shapes — and the deliberate IT/UT asymmetry around {@code
- * cull.observations.dir}.
+ * concrete-selection shapes. Both mojos publish a resolvable observations dir even on a degraded
+ * run (falling back to the JVM temp dir) so the injected {@code ${cull.observations.dir[.it]}}
+ * placeholder never reaches the agent unresolved.
  */
 class MojoPropertyPublicationTest {
 
@@ -69,7 +69,7 @@ class MojoPropertyPublicationTest {
   }
 
   @Test
-  void selectItMojoPublishesWildcardAndOmitsObservationsDir() throws Exception {
+  void selectItMojoPublishesWildcardAndFallsBackObservationsDir() throws Exception {
     CullSelectItMojo mojo = new CullSelectItMojo();
     MavenProject project = new MavenProject();
     inject(mojo, "project", project);
@@ -80,9 +80,10 @@ class MojoPropertyPublicationTest {
     Properties p = project.getProperties();
     assertEquals("*", p.getProperty(CullProperties.SELECTED_TESTS + ".it"));
     assertEquals("n/a", p.getProperty(CullProperties.SESSION_ID + ".it"));
-    assertNull(
+    assertEquals(
+        System.getProperty("java.io.tmpdir"),
         p.getProperty("cull.observations.dir.it"),
-        "unlike the unit mojo, the IT mojo never falls back to a temp dir");
+        "with no staging dir the IT mojo falls back to the JVM temp dir");
   }
 
   @Test

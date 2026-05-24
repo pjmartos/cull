@@ -50,6 +50,10 @@ public class CullSelectItMojo extends AbstractMojo {
       project
           .getProperties()
           .setProperty("cull.observations.dir.it", outcome.stagingDir.toAbsolutePath().toString());
+    } else {
+      project
+          .getProperties()
+          .setProperty("cull.observations.dir.it", System.getProperty("java.io.tmpdir"));
     }
     project
         .getProperties()
