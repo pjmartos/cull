@@ -3,6 +3,6 @@
     <extension>
         <groupId>io.github.pjmartos.cull</groupId>
         <artifactId>cull-extension</artifactId>
-        <version>0.0.3-SNAPSHOT</version>
+        <version>0.0.4-SNAPSHOT</version>
     </extension>
 </extensions>
