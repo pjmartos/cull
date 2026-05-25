@@ -112,11 +112,27 @@ class MojoPropertyPublicationTest {
   }
 
   @Test
+  void selectItMojoPublishesWildcardWhenItSelectionDisabledByDefault() throws Exception {
+    CullSelectItMojo mojo = new CullSelectItMojo();
+    MavenProject project = new MavenProject();
+    inject(mojo, "project", project);
+    inject(mojo, "session", new SessionStub(new Properties(), new Properties()));
+
+    mojo.execute();
+
+    Properties p = project.getProperties();
+    assertEquals("*", p.getProperty(CullProperties.SELECTED_TESTS + ".it"));
+    assertEquals("n/a", p.getProperty(CullProperties.SESSION_ID + ".it"));
+    assertEquals(System.getProperty("java.io.tmpdir"), p.getProperty("cull.observations.dir.it"));
+    assertFalse(p.containsKey(CullProperties.SELECTED_TESTS), "IT bypass must not touch UT keys");
+  }
+
+  @Test
   void selectItMojoPublishesConcreteSelectionAndStagingDir(@TempDir Path tmp) throws Exception {
     CullSelectItMojo mojo = new CullSelectItMojo();
     MavenProject project = fullProject(tmp, "select-it");
     inject(mojo, "project", project);
-    inject(mojo, "session", cacheSession(tmp));
+    inject(mojo, "session", cacheSessionItEnabled(tmp));
     registeredProject = project;
     registeredIntegration = true;
 
@@ -142,6 +158,13 @@ class MojoPropertyPublicationTest {
   private static MavenSession cacheSession(Path tmp) {
     Properties user = new Properties();
     user.setProperty(CullProperties.CACHE_DIR, tmp.resolve("cache").toString());
+    return new SessionStub(user, new Properties());
+  }
+
+  private static MavenSession cacheSessionItEnabled(Path tmp) {
+    Properties user = new Properties();
+    user.setProperty(CullProperties.CACHE_DIR, tmp.resolve("cache").toString());
+    user.setProperty(CullProperties.IT_ENABLED, "true");
     return new SessionStub(user, new Properties());
   }
 

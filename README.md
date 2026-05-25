@@ -80,6 +80,7 @@ See [How it works](docs/how-it-works.md) for the goals and phases `cull` binds t
 * Each module logs one line, for example `[INFO] [cull] app: selected 2 test(s) in 91 ms`, and at the end of the session `cull` prints `[cull] committed cache for app checksum=...` (or `[cull] rolled back ...`)
 * On a warm build with no relevant change, `cull` selects 0 tests and Surefire runs nothing (expected)
 * Force a full run without losing the cache with `-Dcull.fallback.runAll=true` (handy for nightly builds), or switch it off completely with `-Dcull.disabled=true`
+* Integration-test selection is experimental and off by default: every integration test runs each build while only unit tests are culled. Turn it on with `-Dcull.experimental.itSelection.enabled=true`
 * Reset the cache by deleting `~/.cull/cache` (or just the module's subfolder within that folder)
 * A damaged cache repairs itself: a failed integrity check is treated as "no cache"
 
@@ -103,12 +104,13 @@ All settings are read from user and system properties, so they work in the POM o
 
 The most useful ones:
 
-| Property               | Default                    | Meaning                                                                                                                                                                                                         |
-|------------------------|----------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `cull.disabled`        | `false`                    | Turn `cull` off, but leave the cache alone.                                                                                                                                                                     |
-| `cull.fallback.runAll` | `false`                    | Run all tests this time, but still record results and update the cache.                                                                                                                                         |
-| `cull.crossmodule`     | `full`                     | Reactor strategy. `full` reruns only the affected tests in depending sub-modules; `off` runs everything in depending sub-modules as soon as one production class and/or resource changes in an upstream module. |
-| `cull.cache.directory` | `${user.home}/.cull/cache` | Where the per-module cache is stored.                                                                                                                                                                           |
+| Property                                | Default                    | Meaning                                                                                                                                                                                                         |
+|-----------------------------------------|----------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `cull.disabled`                         | `false`                    | Turn `cull` off, but leave the cache alone.                                                                                                                                                                     |
+| `cull.fallback.runAll`                  | `false`                    | Run all tests this time, but still record results and update the cache.                                                                                                                                         |
+| `cull.crossmodule`                      | `full`                     | Reactor strategy. `full` reruns only the affected tests in depending sub-modules; `off` runs everything in depending sub-modules as soon as one production class and/or resource changes in an upstream module. |
+| `cull.experimental.itSelection.enabled` | `false`                    | Experimental. When `true`, `cull` inspects the changed files and selects integration tests accordingly.                                                                                                         |
+| `cull.cache.directory`                  | `${user.home}/.cull/cache` | Where the per-module cache is stored.                                                                                                                                                                           |
 
 For the full list of properties and the `.cullignore` file, see the [Configuration reference](docs/configuration.md).
 

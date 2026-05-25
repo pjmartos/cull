@@ -433,9 +433,42 @@ class ConfigInjectorTest {
       assertNull(cfg.getChild("argLine"), "forkMode=none must suppress agent injection");
     }
 
+    @Test
+    void doesNotWireFailsafeWhenItSelectionDisabledByDefault(@TempDir Path tmp) throws IOException {
+      MavenSession session = sessionWithAgentJar(tmp);
+      MavenProject p = projectWithPlugins(plugin(SUREFIRE, null), plugin(FAILSAFE, null));
+
+      ConfigInjector.inject(p, session, tmp.resolve(AGENT_JAR_NAME).toString());
+
+      Xpp3Dom surefire = (Xpp3Dom) p.getBuild().getPluginsAsMap().get(SUREFIRE).getConfiguration();
+      assertNotNull(surefire, "unit selection must still wire Surefire");
+      assertTrue(surefire.getChild("argLine").getValue().contains("-javaagent:"));
+      assertNull(
+          p.getBuild().getPluginsAsMap().get(FAILSAFE).getConfiguration(),
+          "Failsafe must be left untouched when IT selection is off");
+    }
+
+    @Test
+    void wiresFailsafeWhenItSelectionEnabled(@TempDir Path tmp) throws IOException {
+      MavenSession session = sessionWithAgentJar(tmp, true);
+      MavenProject p = projectWithPlugins(plugin(FAILSAFE, null));
+
+      ConfigInjector.inject(p, session, tmp.resolve(AGENT_JAR_NAME).toString());
+
+      Xpp3Dom cfg = (Xpp3Dom) p.getBuild().getPluginsAsMap().get(FAILSAFE).getConfiguration();
+      assertNotNull(cfg, "Failsafe must be wired once IT selection is enabled");
+      assertTrue(cfg.getChild("argLine").getValue().contains("-javaagent:"));
+      assertEquals("${cull.selected.tests.it}", cfg.getChild("test").getValue());
+      assertNotNull(cfg.getChild("additionalClasspathElements"));
+    }
+
     private static final String AGENT_JAR_NAME = "cull-agent.jar";
 
     private MavenSession sessionWithAgentJar(Path tmp) throws IOException {
+      return sessionWithAgentJar(tmp, false);
+    }
+
+    private MavenSession sessionWithAgentJar(Path tmp, boolean itEnabled) throws IOException {
       Path jar = tmp.resolve(AGENT_JAR_NAME);
       try (JarOutputStream ignored = new JarOutputStream(Files.newOutputStream(jar))) {
         // a valid, empty jar is enough: resolveListenerJar just copies the
@@ -443,6 +476,9 @@ class ConfigInjectorTest {
       }
       Properties user = new Properties();
       user.setProperty(CullProperties.CACHE_DIR, tmp.resolve("cache").toString());
+      if (itEnabled) {
+        user.setProperty(CullProperties.IT_ENABLED, "true");
+      }
       return TestSessionFactory.createSession(user, new Properties());
     }
   }

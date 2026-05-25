@@ -62,7 +62,9 @@ public class CullSelectItMojo extends AbstractMojo {
             outcome.sessionId == null ? "n/a" : outcome.sessionId);
     String summary =
         outcome.wildcard
-            ? "running all integration tests"
+            ? "running all integration tests ("
+                + (outcome.reasonForWildcard == null ? "wildcard" : outcome.reasonForWildcard)
+                + ")"
             : "selected " + outcome.selected.size() + " IT(s)";
     getLog()
         .info(

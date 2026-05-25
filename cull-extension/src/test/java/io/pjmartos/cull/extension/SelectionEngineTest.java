@@ -3,9 +3,9 @@ package io.pjmartos.cull.extension;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.pjmartos.cull.core.RelPath;
 import io.pjmartos.cull.core.TestGraph;
 import io.pjmartos.cull.core.TestGraphCodec;
 import java.io.ByteArrayOutputStream;
@@ -134,15 +134,17 @@ class SelectionEngineTest {
   class RunFor {
 
     private MavenProject registeredProject;
+    private boolean registeredIntegration;
 
     @AfterEach
     void releaseAnyRegisteredSession() {
       if (registeredProject != null) {
-        CullSession cs = CullSessionRegistry.remove(registeredProject, false);
+        CullSession cs = CullSessionRegistry.remove(registeredProject, registeredIntegration);
         if (cs != null) {
           cs.rollback();
         }
         registeredProject = null;
+        registeredIntegration = false;
       }
     }
 
@@ -320,6 +322,62 @@ class SelectionEngineTest {
       registeredProject = p;
 
       assertFalse(o.wildcard, "no JaCoCo configured -> coverage retention is inert, no forced run");
+    }
+
+    @Test
+    void itSelectionDisabledByDefaultShortCircuitsToWildcard(@TempDir Path tmp) throws IOException {
+      Properties user = new Properties();
+      user.setProperty(CullProperties.CACHE_DIR, tmp.resolve("cache").toString());
+      MavenSession session = TestSessionFactory.createSession(user, new Properties());
+      MavenProject p = fullProject(tmp, "it-default-off");
+
+      SelectionOutcome o = SelectionEngine.runFor(p, session, true);
+
+      assertTrue(o.wildcard, "IT selection is off by default, so it must collapse to a full run");
+      assertEquals("IT selection disabled", o.reasonForWildcard);
+      assertNull(o.stagingDir, "the bypass returns before any staging dir is created");
+      assertNull(
+          CullSessionRegistry.get(p, true), "no IT session is registered, so nothing commits");
+      assertFalse(
+          Files.exists(SelectionEngine.sessionStateFile(p, true)),
+          "the bypass must not persist IT session state");
+    }
+
+    @Test
+    void itToggleOffBypassesIntegrationButNotUnitSelection(@TempDir Path tmp) throws IOException {
+      Properties user = new Properties();
+      user.setProperty(CullProperties.CACHE_DIR, tmp.resolve("cache").toString());
+      MavenSession session = TestSessionFactory.createSession(user, new Properties());
+      MavenProject p = fullProject(tmp, "it-off-unit-on");
+
+      SelectionOutcome unit = SelectionEngine.runFor(p, session, false);
+      registeredProject = p; // a unit session is registered; clean it up
+      SelectionOutcome it = SelectionEngine.runFor(p, session, true);
+
+      assertFalse(unit.wildcard, "unit selection must keep culling while IT selection is off");
+      assertNotNull(CullSessionRegistry.get(p, false), "the unit session must be registered");
+      assertTrue(it.wildcard, "IT selection is bypassed");
+      assertEquals("IT selection disabled", it.reasonForWildcard);
+      assertNull(CullSessionRegistry.get(p, true), "no IT session is registered");
+    }
+
+    @Test
+    void itSelectionEnabledRegistersSessionLikeUnit(@TempDir Path tmp) throws IOException {
+      Properties user = new Properties();
+      user.setProperty(CullProperties.CACHE_DIR, tmp.resolve("cache").toString());
+      user.setProperty(CullProperties.IT_ENABLED, "true");
+      MavenSession session = TestSessionFactory.createSession(user, new Properties());
+      MavenProject p = fullProject(tmp, "it-enabled");
+
+      SelectionOutcome o = SelectionEngine.runFor(p, session, true);
+      registeredProject = p;
+      registeredIntegration = true;
+
+      assertFalse(o.wildcard, "no test classes -> nothing to collapse, just like the unit path");
+      assertNotNull(o.sessionId);
+      assertTrue(Files.isDirectory(o.stagingDir));
+      assertNotNull(
+          CullSessionRegistry.get(p, true), "an IT session must be registered when enabled");
     }
 
     @Test
@@ -552,7 +610,7 @@ class SelectionEngineTest {
     Files.createDirectories(cacheBase);
     TestGraph prior =
         new TestGraph(
-            Map.of("com.example.FooTest", Set.<RelPath>of()),
+            Map.of("com.example.FooTest", Set.of()),
             Map.of(),
             Set.of(),
             false,

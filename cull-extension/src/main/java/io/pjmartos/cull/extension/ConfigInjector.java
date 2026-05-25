@@ -39,7 +39,8 @@ public final class ConfigInjector {
       injected |=
           injectInto(project, SUREFIRE_GAV, agentJar, listenerJar, surefireArgs(baseArgs), false);
     }
-    if (!ForkConfig.forkDisabled(project, session, FAILSAFE_GAV)) {
+    if (CullProperties.isItSelectionEnabled(session)
+        && !ForkConfig.forkDisabled(project, session, FAILSAFE_GAV)) {
       injected |=
           injectInto(project, FAILSAFE_GAV, agentJar, listenerJar, failsafeArgs(baseArgs), true);
     }

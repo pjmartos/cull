@@ -2,6 +2,7 @@ package io.pjmartos.cull.extension;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Locale;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.project.MavenProject;
 
@@ -17,6 +18,7 @@ public final class CullProperties {
   public static final String SESSION_ID = "cull.session.id";
   public static final String TEST_INCLUDES = "cull.test.includes";
   public static final String IT_INCLUDES = "cull.it.includes";
+  public static final String IT_ENABLED = "cull.experimental.itSelection.enabled";
   public static final String CROSS_MODULE = "cull.crossmodule";
   public static final String COVERAGE_RETAIN = "cull.coverage.retain";
 
@@ -34,6 +36,10 @@ public final class CullProperties {
 
   public static boolean isFallbackRunAll(MavenSession session) {
     return boolFromUser(session, FALLBACK_RUN_ALL);
+  }
+
+  public static boolean isItSelectionEnabled(MavenSession session) {
+    return boolFromUser(session, IT_ENABLED);
   }
 
   public static int cacheRetention(MavenSession session) {
@@ -89,12 +95,10 @@ public final class CullProperties {
     if (v == null) {
       return CrossModuleMode.FULL;
     }
-    switch (v.trim().toLowerCase(java.util.Locale.ROOT)) {
-      case "off":
-        return CrossModuleMode.OFF;
-      default:
-        return CrossModuleMode.FULL;
+    if ("off".equals(v.trim().toLowerCase(Locale.ROOT))) {
+      return CrossModuleMode.OFF;
     }
+    return CrossModuleMode.FULL;
   }
 
   private static boolean boolFromUser(MavenSession session, String key) {

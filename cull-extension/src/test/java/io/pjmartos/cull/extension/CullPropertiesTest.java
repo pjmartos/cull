@@ -81,6 +81,37 @@ class CullPropertiesTest {
   }
 
   @Test
+  void itSelectionDisabledByDefault() {
+    assertFalse(CullProperties.isItSelectionEnabled(session));
+  }
+
+  @Test
+  void itSelectionEnabledWhenUserPropertySet() {
+    userProps.setProperty(CullProperties.IT_ENABLED, "true");
+    assertTrue(CullProperties.isItSelectionEnabled(session));
+  }
+
+  @Test
+  void itSelectionEnabledWhenSystemPropertySet() {
+    sysProps.setProperty(CullProperties.IT_ENABLED, "true");
+    assertTrue(CullProperties.isItSelectionEnabled(session));
+  }
+
+  @Test
+  void itSelectionEnabledCaseInsensitive() {
+    userProps.setProperty(CullProperties.IT_ENABLED, "TRUE");
+    assertTrue(CullProperties.isItSelectionEnabled(session));
+  }
+
+  @Test
+  void itSelectionStaysDisabledForNonTrueValues() {
+    userProps.setProperty(CullProperties.IT_ENABLED, "false");
+    assertFalse(CullProperties.isItSelectionEnabled(session));
+    userProps.setProperty(CullProperties.IT_ENABLED, "1");
+    assertFalse(CullProperties.isItSelectionEnabled(session));
+  }
+
+  @Test
   void ioHooksDisabledByDefault() {
     assertFalse(CullProperties.ioHooksDisabled(session));
   }

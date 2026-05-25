@@ -47,6 +47,9 @@ public final class SelectionEngine {
     if (CullProperties.isDisabled(session)) {
       return SelectionOutcome.wildcard("cull disabled");
     }
+    if (integration && !CullProperties.isItSelectionEnabled(session)) {
+      return SelectionOutcome.wildcard("IT selection disabled");
+    }
     if (ForkConfig.forkDisabled(project, session, integration)) {
       return SelectionOutcome.wildcard("forkCount=0 / forkMode=never");
     }
