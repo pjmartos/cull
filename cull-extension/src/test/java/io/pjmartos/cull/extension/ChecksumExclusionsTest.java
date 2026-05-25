@@ -160,6 +160,26 @@ class ChecksumExclusionsTest {
   }
 
   @Test
+  void escapedPeriodsAreHonoured(@TempDir Path tmp) throws IOException {
+    Files.writeString(tmp.resolve(".cullignore"), "com.x:y#a\\.b\\.nonce\n");
+    Xpp3Dom cfg = new Xpp3Dom("configuration");
+    Xpp3Dom a = new Xpp3Dom("a");
+    Xpp3Dom b = new Xpp3Dom("b");
+    Xpp3Dom deep = new Xpp3Dom("nonce");
+    Xpp3Dom aBNonce = new Xpp3Dom("a.b.nonce");
+    b.addChild(deep);
+    a.addChild(b);
+    cfg.addChild(a);
+    cfg.addChild(aBNonce);
+
+    load(tmp).prune("com.x:y", cfg);
+
+    Xpp3Dom bOut = cfg.getChild("a").getChild("b");
+    assertNotNull(bOut.getChild("nonce"), "the dotted path subtree must survive");
+    assertNull(cfg.getChild("a.b.nonce"), "the matched subtree must be gone");
+  }
+
+  @Test
   void singleStarMatchesExactlyOneLevel(@TempDir Path tmp) throws IOException {
     Files.writeString(tmp.resolve(".cullignore"), "com.x:y#a.*.nonce\n");
     Xpp3Dom cfg = new Xpp3Dom("configuration");

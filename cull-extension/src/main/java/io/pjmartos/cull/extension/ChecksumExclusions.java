@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import org.apache.maven.execution.MavenSession;
@@ -303,7 +304,10 @@ final class ChecksumExclusions {
       if (gavParts.length < 2) {
         return null;
       }
-      String[] tokens = pathExpr.split("\\.");
+      String[] tokens =
+          Arrays.stream(pathExpr.replace("\\.", "@@cullDOTcull@@").split("\\."))
+              .map(t -> t.replace("@@cullDOTcull@@", "."))
+              .toArray(String[]::new);
       if (tokens.length == 0) {
         return null;
       }
