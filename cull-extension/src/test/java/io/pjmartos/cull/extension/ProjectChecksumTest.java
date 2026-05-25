@@ -264,20 +264,108 @@ class ProjectChecksumTest {
 
   @Test
   void isRelevantViaReflection() throws Exception {
-    Method m = ProjectChecksum.class.getDeclaredMethod("isRelevant", Plugin.class);
+    Method m = ProjectChecksum.class.getDeclaredMethod("isRelevant", Plugin.class, Set.class);
     m.setAccessible(true);
+    Set<String> phases = unitPhases();
 
     Plugin relevant = new Plugin();
     PluginExecution e = new PluginExecution();
     e.setPhase("compile");
     relevant.addExecution(e);
-    assertTrue((Boolean) m.invoke(null, relevant));
+    assertTrue((Boolean) m.invoke(null, relevant, phases));
 
     Plugin irrelevant = new Plugin();
     PluginExecution e2 = new PluginExecution();
     e2.setPhase("package");
     irrelevant.addExecution(e2);
-    assertFalse((Boolean) m.invoke(null, irrelevant));
+    assertFalse((Boolean) m.invoke(null, irrelevant, phases));
+  }
+
+  @Test
+  void isRelevantUnitScopeExcludesPostTestPhases() {
+    Set<String> phases = unitPhases();
+    for (String phase :
+        new String[] {
+          "prepare-package",
+          "package",
+          "pre-integration-test",
+          "integration-test",
+          "post-integration-test",
+          "verify"
+        }) {
+      Plugin p = new Plugin();
+      PluginExecution e = new PluginExecution();
+      e.setPhase(phase);
+      p.addExecution(e);
+      assertFalse(
+          invokeIsRelevant(p, phases), "unit-scope phase set must not include `" + phase + "`");
+    }
+  }
+
+  @Test
+  void isRelevantItScopeIncludesPostTestPhases() {
+    Set<String> phases = itPhases();
+    for (String phase :
+        new String[] {
+          "compile",
+          "test-compile",
+          "test",
+          "prepare-package",
+          "package",
+          "pre-integration-test",
+          "integration-test",
+          "post-integration-test",
+          "verify"
+        }) {
+      Plugin p = new Plugin();
+      PluginExecution e = new PluginExecution();
+      e.setPhase(phase);
+      p.addExecution(e);
+      assertTrue(invokeIsRelevant(p, phases), "IT-scope phase set must include `" + phase + "`");
+    }
+  }
+
+  @Test
+  void isRelevantItScopeStillExcludesPostVerifyPhases() {
+    Set<String> phases = itPhases();
+    for (String phase : new String[] {"install", "deploy"}) {
+      Plugin p = new Plugin();
+      PluginExecution e = new PluginExecution();
+      e.setPhase(phase);
+      p.addExecution(e);
+      assertFalse(
+          invokeIsRelevant(p, phases),
+          "IT-scope phase set must not include post-verify phase `" + phase + "`");
+    }
+  }
+
+  private static Set<String> unitPhases() {
+    return invokePhaseSet("phaseSetAtOrBeforeTest");
+  }
+
+  private static Set<String> itPhases() {
+    return invokePhaseSet("phaseSetAtOrBeforeVerify");
+  }
+
+  @SuppressWarnings("unchecked")
+  private static Set<String> invokePhaseSet(String methodName) {
+    try {
+      Method m = ProjectChecksum.class.getDeclaredMethod(methodName);
+      m.setAccessible(true);
+      return (Set<String>) m.invoke(null);
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  private static boolean invokeIsRelevant(Plugin p, Set<String> phases) {
+    try {
+      Method m = ProjectChecksum.class.getDeclaredMethod("isRelevant", Plugin.class, Set.class);
+      m.setAccessible(true);
+      return (Boolean) m.invoke(null, p, phases);
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
   }
 
   @Test
@@ -406,13 +494,7 @@ class ProjectChecksumTest {
   }
 
   private static boolean isRelevant(Plugin p) {
-    try {
-      Method m = ProjectChecksum.class.getDeclaredMethod("isRelevant", Plugin.class);
-      m.setAccessible(true);
-      return (Boolean) m.invoke(null, p);
-    } catch (Exception e) {
-      throw new RuntimeException(e);
-    }
+    return invokeIsRelevant(p, unitPhases());
   }
 
   @Test
@@ -494,13 +576,13 @@ class ProjectChecksumTest {
     MavenProject b = downstream("com.example", "mod-b", "1.0");
     MavenSession session = sessionWith(a, b);
 
-    String includedBefore = ProjectChecksum.compute(b, session, false);
-    String excludedBefore = ProjectChecksum.compute(b, session, true);
+    String includedBefore = ProjectChecksum.compute(b, session, false, false);
+    String excludedBefore = ProjectChecksum.compute(b, session, false, true);
 
     Files.write(aClasses.resolve("V.class"), new byte[] {9, 9, 9, 9});
 
-    String includedAfter = ProjectChecksum.compute(b, session, false);
-    String excludedAfter = ProjectChecksum.compute(b, session, true);
+    String includedAfter = ProjectChecksum.compute(b, session, false, false);
+    String excludedAfter = ProjectChecksum.compute(b, session, false, true);
 
     assertNotEquals(includedBefore, includedAfter, "coarse mode: upstream content rotates the key");
     assertEquals(
@@ -517,12 +599,12 @@ class ProjectChecksumTest {
 
     MavenProject a = reactorProject("com.example", "mod-a", "1.0", tmp.resolve("a/target/classes"));
     MavenProject b1 = downstream("com.example", "mod-b", "1.0");
-    String v1 = ProjectChecksum.compute(b1, sessionWith(a, b1), true);
+    String v1 = ProjectChecksum.compute(b1, sessionWith(a, b1), false, true);
 
     MavenProject a2 =
         reactorProject("com.example", "mod-a", "2.0", tmp.resolve("a/target/classes"));
     MavenProject b2 = downstreamDependingOn("com.example", "mod-b", "1.0", "2.0");
-    String v2 = ProjectChecksum.compute(b2, sessionWith(a2, b2), true);
+    String v2 = ProjectChecksum.compute(b2, sessionWith(a2, b2), false, true);
 
     assertNotEquals(v1, v2, "a sibling version bump must still rotate the key even when excluded");
   }
@@ -535,14 +617,105 @@ class ProjectChecksumTest {
     MavenProject b = downstream("com.example", "mod-b", "1.0");
     MavenSession s = sessionWith(a, b);
 
-    String coarse1 = ProjectChecksum.compute(b, s, false);
-    String coarse2 = ProjectChecksum.compute(b, s, false);
-    String excl1 = ProjectChecksum.compute(b, s, true);
-    String excl2 = ProjectChecksum.compute(b, s, true);
+    String coarse1 = ProjectChecksum.compute(b, s, false, false);
+    String coarse2 = ProjectChecksum.compute(b, s, false, false);
+    String excl1 = ProjectChecksum.compute(b, s, false, true);
+    String excl2 = ProjectChecksum.compute(b, s, false, true);
 
     assertEquals(coarse1, coarse2, "coarse mode is deterministic");
     assertEquals(excl1, excl2, "excluded mode is deterministic");
     assertNotEquals(coarse1, excl1, "toggling cull.crossmodule rotates the cache key exactly once");
+  }
+
+  @Test
+  void itChecksumReactsToFailsafeConfigChange(@TempDir Path tmp) throws IOException {
+    MavenProject before = projectWithFailsafeArg("-Xmx512m");
+    MavenProject after = projectWithFailsafeArg("-Xmx2g");
+    String itBefore = checksumAt(tmp, before, true);
+    String itAfter = checksumAt(tmp, after, true);
+    assertNotEquals(
+        itBefore,
+        itAfter,
+        "a Failsafe config change must rotate the IT key (Failsafe is in-scope for the IT phase set)");
+  }
+
+  @Test
+  void unitChecksumIgnoresFailsafeConfigChange(@TempDir Path tmp) throws IOException {
+    MavenProject before = projectWithFailsafeArg("-Xmx512m");
+    MavenProject after = projectWithFailsafeArg("-Xmx2g");
+    String unitBefore = checksumAt(tmp, before, false);
+    String unitAfter = checksumAt(tmp, after, false);
+    assertEquals(
+        unitBefore,
+        unitAfter,
+        "a Failsafe config change must NOT rotate the unit key (Failsafe is post-test, out of scope)");
+  }
+
+  @Test
+  void unitChecksumReactsToSurefireConfigChange(@TempDir Path tmp) throws IOException {
+    MavenProject before = projectWithPluginConfig("-Xmx512m");
+    MavenProject after = projectWithPluginConfig("-Xmx2g");
+    String unitBefore = checksumAt(tmp, before, false);
+    String unitAfter = checksumAt(tmp, after, false);
+    assertNotEquals(unitBefore, unitAfter, "a Surefire config change must rotate the unit key");
+  }
+
+  @Test
+  void itChecksumReactsToSurefireConfigChange(@TempDir Path tmp) throws IOException {
+    MavenProject before = projectWithPluginConfig("-Xmx512m");
+    MavenProject after = projectWithPluginConfig("-Xmx2g");
+    String itBefore = checksumAt(tmp, before, true);
+    String itAfter = checksumAt(tmp, after, true);
+    assertNotEquals(
+        itBefore,
+        itAfter,
+        "a Surefire config change must also rotate the IT key (Surefire ⊂ IT phase scope)");
+  }
+
+  @Test
+  void itAndUnitChecksumsDifferWhenPostTestPluginPresent(@TempDir Path tmp) throws IOException {
+    MavenProject p = projectWithFailsafeArg("-Xmx1g");
+    String unit = checksumAt(tmp, p, false);
+    String it = checksumAt(tmp, p, true);
+    assertNotEquals(
+        unit,
+        it,
+        "the IT and unit checksums of the same project must diverge when a post-test plugin contributes");
+  }
+
+  private static MavenProject projectWithFailsafeArg(String failsafeArgLine) {
+    MavenProject p = new MavenProject();
+    p.setGroupId("io.pjmartos.cull.test");
+    p.setArtifactId("mod");
+    p.setVersion("1.2.3");
+    Build b = new Build();
+    Plugin fs = new Plugin();
+    fs.setGroupId("org.apache.maven.plugins");
+    fs.setArtifactId("maven-failsafe-plugin");
+    fs.setVersion("3.2.5");
+    Xpp3Dom cfg = new Xpp3Dom("configuration");
+    Xpp3Dom arg = new Xpp3Dom("argLine");
+    arg.setValue(failsafeArgLine);
+    cfg.addChild(arg);
+    fs.setConfiguration(cfg);
+    PluginExecution exec = new PluginExecution();
+    exec.setId("default-integration-test");
+    exec.setPhase("integration-test");
+    exec.setGoals(List.of("integration-test", "verify"));
+    fs.setExecutions(List.of(exec));
+    b.addPlugin(fs);
+    p.setBuild(b);
+    return p;
+  }
+
+  private static String checksumAt(Path baseDir, MavenProject p, boolean integration)
+      throws IOException {
+    Path pom = baseDir.resolve("pom.xml");
+    if (!Files.exists(pom)) {
+      Files.writeString(pom, "<project/>");
+    }
+    p.setFile(pom.toFile());
+    return ProjectChecksum.compute(p, session(), integration, false);
   }
 
   private static MavenProject reactorProject(String g, String a, String v, Path classesDir) {

@@ -547,7 +547,7 @@ class SelectionEngineTest {
    * selection finds nothing changed (an empty subset, not a bootstrap). Returns the cache key.
    */
   private static String seedPriorGraph(MavenProject p, MavenSession session) throws IOException {
-    String checksum = ProjectChecksum.compute(p, session, false);
+    String checksum = ProjectChecksum.compute(p, session, false, false);
     Path cacheBase = SelectionEngine.cacheBaseFor(p, session);
     Files.createDirectories(cacheBase);
     TestGraph prior =

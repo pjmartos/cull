@@ -111,7 +111,7 @@ class CrossModuleSelectionTest {
     cs.commit();
     registered = null; // commit released the lock and cleaned staging
 
-    String key = ProjectChecksum.compute(f.b, f.session, true);
+    String key = ProjectChecksum.compute(f.b, f.session, false, true);
     Path stateFile =
         f.root.resolve("cache").resolve("com/example").resolve("mod-b").resolve(key + ".state.bin");
     TestGraph persisted = TestGraphCodec.decode(Files.readAllBytes(stateFile));
@@ -264,7 +264,7 @@ class CrossModuleSelectionTest {
       Map<CrossRef, byte[]> upstream = new HashMap<>();
       upstream.put(vRef, FileHasher.sha256(upstreamClasses.resolve("V.class")));
 
-      String key = ProjectChecksum.compute(b, session, true);
+      String key = ProjectChecksum.compute(b, session, false, true);
       Path cacheBase = tmp.resolve("cache").resolve("com/example").resolve("mod-b");
       Files.createDirectories(cacheBase);
       Files.write(

@@ -54,8 +54,8 @@ class CullSessionTest {
     Path classes = Files.createDirectories(buildDir.resolve("classes"));
     Path testClasses = Files.createDirectories(buildDir.resolve("test-classes"));
 
-    Map<String, Set<io.pjmartos.cull.core.RelPath>> emptyDeps = Collections.emptyMap();
-    Map<io.pjmartos.cull.core.RelPath, byte[]> emptyHashes = Collections.emptyMap();
+    Map<String, Set<RelPath>> emptyDeps = Collections.emptyMap();
+    Map<RelPath, byte[]> emptyHashes = Collections.emptyMap();
 
     SessionState state =
         new SessionState(
@@ -88,9 +88,9 @@ class CullSessionTest {
     Path classes = Files.createDirectories(buildDir.resolve("classes"));
     Path testClasses = Files.createDirectories(buildDir.resolve("test-classes"));
 
-    Map<String, Set<io.pjmartos.cull.core.RelPath>> emptyDeps = Collections.emptyMap();
-    Map<io.pjmartos.cull.core.RelPath, byte[]> emptyHashes = Collections.emptyMap();
-    Map<io.pjmartos.cull.core.RelPath, byte[]> cacheHashes = Collections.emptyMap();
+    Map<String, Set<RelPath>> emptyDeps = Collections.emptyMap();
+    Map<RelPath, byte[]> emptyHashes = Collections.emptyMap();
+    Map<RelPath, byte[]> cacheHashes = Collections.emptyMap();
 
     // Write a prior graph file
     TestGraph graph = new TestGraph(emptyDeps, cacheHashes, Collections.emptySet(), false);
@@ -343,7 +343,7 @@ class CullSessionTest {
     Path classes = Files.createDirectories(buildDir.resolve("classes"));
     Path testClasses = Files.createDirectories(buildDir.resolve("test-classes"));
 
-    Map<io.pjmartos.cull.core.RelPath, byte[]> emptyHashes = Collections.emptyMap();
+    Map<RelPath, byte[]> emptyHashes = Collections.emptyMap();
 
     Files.write(cacheBase.resolve("abc.state.bin"), new byte[] {0, 1, 2, 3, 4});
 
@@ -860,6 +860,206 @@ class CullSessionTest {
       // No failure, no exceptions, empty selection, no reports -> commit allowed.
       assertTrue(cs.allTestsPassed(session));
     }
+  }
+
+  @Test
+  void commitIntegrationTrueWritesItStateFile(@TempDir Path tmp) throws IOException {
+    Path proj = Files.createDirectories(tmp.resolve("proj"));
+    Path buildDir = Files.createDirectories(proj.resolve("target"));
+    Path mainClasses = Files.createDirectories(buildDir.resolve("classes"));
+    Path testClasses = Files.createDirectories(buildDir.resolve("test-classes"));
+    Path cacheBase = Files.createDirectories(tmp.resolve("cache"));
+    Path staging = Files.createDirectories(tmp.resolve("staging"));
+
+    CullSession cs =
+        new CullSession(
+            proj,
+            buildDir,
+            mainClasses,
+            testClasses,
+            cacheBase,
+            staging,
+            "chk",
+            TestGraph.empty(),
+            new HashMap<>(),
+            Set.of(),
+            Set.of(),
+            false,
+            false,
+            false,
+            5);
+
+    cs.commit(true);
+
+    assertTrue(
+        Files.isRegularFile(cacheBase.resolve("chk.it.state.bin")),
+        "commit(integration=true) writes the IT-scoped state file");
+    assertFalse(
+        Files.exists(cacheBase.resolve("chk.state.bin")),
+        "commit(integration=true) must NOT touch the unit-scoped state file");
+    assertTrue(Files.isRegularFile(cacheBase.resolve("chk.it.last_used")));
+    assertFalse(Files.exists(cacheBase.resolve("chk.last_used")));
+  }
+
+  @Test
+  void commitIntegrationFalseWritesUnitStateFile(@TempDir Path tmp) throws IOException {
+    Path proj = Files.createDirectories(tmp.resolve("proj"));
+    Path buildDir = Files.createDirectories(proj.resolve("target"));
+    Path mainClasses = Files.createDirectories(buildDir.resolve("classes"));
+    Path testClasses = Files.createDirectories(buildDir.resolve("test-classes"));
+    Path cacheBase = Files.createDirectories(tmp.resolve("cache"));
+    Path staging = Files.createDirectories(tmp.resolve("staging"));
+
+    CullSession cs =
+        new CullSession(
+            proj,
+            buildDir,
+            mainClasses,
+            testClasses,
+            cacheBase,
+            staging,
+            "chk",
+            TestGraph.empty(),
+            new HashMap<>(),
+            Set.of(),
+            Set.of(),
+            false,
+            false,
+            false,
+            5);
+
+    cs.commit(false);
+
+    assertTrue(
+        Files.isRegularFile(cacheBase.resolve("chk.state.bin")),
+        "commit(integration=false) writes the unit-scoped state file");
+    assertFalse(
+        Files.exists(cacheBase.resolve("chk.it.state.bin")),
+        "commit(integration=false) must NOT touch the IT-scoped state file");
+  }
+
+  @Test
+  void unitAndItCommitsCoexistWithoutOverwriting(@TempDir Path tmp) throws IOException {
+    Path proj = Files.createDirectories(tmp.resolve("proj"));
+    Path buildDir = Files.createDirectories(proj.resolve("target"));
+    Path mainClasses = Files.createDirectories(buildDir.resolve("classes"));
+    Path testClasses = Files.createDirectories(buildDir.resolve("test-classes"));
+    Path cacheBase = Files.createDirectories(tmp.resolve("cache"));
+    Path staging1 = Files.createDirectories(tmp.resolve("staging-unit"));
+    new CullSession(
+            proj,
+            buildDir,
+            mainClasses,
+            testClasses,
+            cacheBase,
+            staging1,
+            "chk",
+            TestGraph.empty(),
+            new HashMap<>(),
+            Set.of("com.example.UnitTest"),
+            Set.of("com.example.UnitTest"),
+            Set.<RelPath>of(),
+            false,
+            false,
+            false,
+            5)
+        .commit(false);
+
+    Path staging2 = Files.createDirectories(tmp.resolve("staging-it"));
+    new CullSession(
+            proj,
+            buildDir,
+            mainClasses,
+            testClasses,
+            cacheBase,
+            staging2,
+            "chk",
+            TestGraph.empty(),
+            new HashMap<>(),
+            Set.of("com.example.FooIT"),
+            Set.of("com.example.FooIT"),
+            Set.<RelPath>of(),
+            false,
+            false,
+            false,
+            5)
+        .commit(true);
+
+    Path unitFile = cacheBase.resolve("chk.state.bin");
+    Path itFile = cacheBase.resolve("chk.it.state.bin");
+    assertTrue(Files.isRegularFile(unitFile), "unit state file must persist after the IT commit");
+    assertTrue(Files.isRegularFile(itFile), "IT state file must persist after the IT commit");
+    assertFalse(
+        java.util.Arrays.equals(Files.readAllBytes(unitFile), Files.readAllBytes(itFile)),
+        "unit and IT state files carry different graphs (selected sets differ) and must not collide");
+  }
+
+  @Test
+  void fromStateIntegrationTrueLoadsItStateFile(@TempDir Path tmp) throws IOException {
+    Path cacheBase = Files.createDirectories(tmp.resolve("cache"));
+    Path staging = Files.createDirectories(tmp.resolve("staging"));
+    Path buildDir = Files.createDirectories(tmp.resolve("target"));
+    Path classes = Files.createDirectories(buildDir.resolve("classes"));
+    Path testClasses = Files.createDirectories(buildDir.resolve("test-classes"));
+
+    Map<RelPath, byte[]> emptyHashes = Collections.emptyMap();
+
+    TestGraph graph = new TestGraph(Collections.emptyMap(), emptyHashes, Set.of("FooIT"), false);
+    Files.write(cacheBase.resolve("abc.it.state.bin"), TestGraphCodec.encode(graph));
+
+    SessionState state =
+        new SessionState(
+            "abc",
+            cacheBase,
+            staging,
+            tmp.resolve("proj"),
+            buildDir,
+            classes,
+            testClasses,
+            5,
+            false,
+            false,
+            false,
+            Set.of(),
+            emptyHashes,
+            Set.of());
+
+    CullSession session = CullSession.fromState(state, true);
+    assertNotNull(session, "fromState(integration=true) must succeed against the IT state file");
+  }
+
+  @Test
+  void fromStateIntegrationFalseIsBackwardCompatibleWithUnitFile(@TempDir Path tmp)
+      throws IOException {
+    Path cacheBase = Files.createDirectories(tmp.resolve("cache"));
+    Path staging = Files.createDirectories(tmp.resolve("staging"));
+    Path buildDir = Files.createDirectories(tmp.resolve("target"));
+    Path classes = Files.createDirectories(buildDir.resolve("classes"));
+    Path testClasses = Files.createDirectories(buildDir.resolve("test-classes"));
+
+    Map<RelPath, byte[]> emptyHashes = Collections.emptyMap();
+    TestGraph graph = new TestGraph(Collections.emptyMap(), emptyHashes, Set.of("FooTest"), false);
+    Files.write(cacheBase.resolve("abc.state.bin"), TestGraphCodec.encode(graph));
+
+    SessionState state =
+        new SessionState(
+            "abc",
+            cacheBase,
+            staging,
+            tmp.resolve("proj"),
+            buildDir,
+            classes,
+            testClasses,
+            5,
+            false,
+            false,
+            false,
+            Set.of(),
+            emptyHashes,
+            Set.of());
+
+    assertNotNull(CullSession.fromState(state));
+    assertNotNull(CullSession.fromState(state, false));
   }
 
   // -- hoisted helpers (Java 11: @Nested inner classes cannot declare static members) --

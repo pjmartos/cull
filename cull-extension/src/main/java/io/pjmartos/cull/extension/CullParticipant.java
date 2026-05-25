@@ -48,7 +48,7 @@ public class CullParticipant extends AbstractMavenLifecycleParticipant {
     if (cs == null) return;
     try {
       if (cs.allTestsPassed(session)) {
-        cs.commit();
+        cs.commit(integration);
         // Persist the union (retained baseline ∪ this run's subset) that JaCoCo
         // wrote into its destFile, so the next run can seed it again. Only on a
         // verified-passing commit; a rollback leaves the prior baseline intact.
@@ -94,7 +94,7 @@ public class CullParticipant extends AbstractMavenLifecycleParticipant {
     }
     try {
       SessionState state = SessionStateCodec.decode(Files.readAllBytes(file));
-      return CullSession.fromState(state);
+      return CullSession.fromState(state, integration);
     } catch (IOException e) {
       System.err.println("[cull] failed to load session state for " + p.getArtifactId() + ": " + e);
       return null;

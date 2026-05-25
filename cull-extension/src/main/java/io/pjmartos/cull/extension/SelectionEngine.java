@@ -65,7 +65,7 @@ public final class SelectionEngine {
       crossIndex = null;
     }
 
-    String projectChecksum = ProjectChecksum.compute(project, session, crossEligible);
+    String projectChecksum = ProjectChecksum.compute(project, session, integration, crossEligible);
     Path cacheBase = cacheBaseFor(project, session);
     try {
       Files.createDirectories(cacheBase);
@@ -75,154 +75,156 @@ public final class SelectionEngine {
 
     Path lockFile = cacheBase.resolve(".lock");
     cleanupStaleLock(lockFile);
-    FileLockHandle lock = FileLockHandle.tryAcquire(lockFile);
-    if (lock == null) {
-      return SelectionOutcome.wildcard("cache lock unavailable");
-    }
+    try (FileLockHandle lock = FileLockHandle.tryAcquire(lockFile)) {
+      if (lock == null) {
+        return SelectionOutcome.wildcard("cache lock unavailable");
+      }
 
-    Path stateFile = cacheBase.resolve(projectChecksum + ".state.bin");
-    TestGraph priorGraph = TestGraph.empty();
-    if (Files.isRegularFile(stateFile)) {
+      Path stateFile =
+          cacheBase.resolve(projectChecksum + (integration ? ".it" : "") + ".state.bin");
+      TestGraph priorGraph = TestGraph.empty();
+      if (Files.isRegularFile(stateFile)) {
+        try {
+          priorGraph = TestGraphCodec.decode(Files.readAllBytes(stateFile));
+          touchLastUsed(
+              cacheBase.resolve(projectChecksum + (integration ? ".it" : "") + ".last_used"));
+        } catch (IOException e) {
+          priorGraph = TestGraph.empty();
+        }
+      }
+
+      boolean degraded = readAgentDegraded(session, priorGraph);
+
+      List<Path> sourceFiles = collectSourceFiles(project);
+      Path projectBase = projectBase(project);
+      Map<RelPath, byte[]> currentHashes = hashAll(projectBase, sourceFiles);
+      Set<RelPath> currentFiles = new LinkedHashSet<>(currentHashes.keySet());
+
+      Set<String> testClasses = collectTestClassNames(project, session, integration);
+
+      Set<RelPath> resourceRoots = collectResourceRoots(project, projectBase);
+
+      TestSelection.Inputs in =
+          new TestSelection.Inputs(
+              priorGraph.hashes(),
+              priorGraph,
+              currentFiles,
+              currentHashes,
+              testClasses,
+              degraded,
+              resourceRoots);
+      TestSelection.Result selection = TestSelection.select(in);
+
+      runOpportunisticGc(cacheBase, CullProperties.cacheRetention(session));
+
+      String sessionId = UUID.randomUUID().toString();
+      Path stagingRoot = CullProperties.observationsRoot(session, project);
+      Path stagingDir =
+          stagingRoot != null
+              ? stagingRoot.resolve(".staging-" + sessionId)
+              : cacheBase.resolve(".staging-" + sessionId);
       try {
-        priorGraph = TestGraphCodec.decode(Files.readAllBytes(stateFile));
-        touchLastUsed(cacheBase.resolve(projectChecksum + ".last_used"));
+        Files.createDirectories(stagingDir);
       } catch (IOException e) {
-        priorGraph = TestGraph.empty();
+        return SelectionOutcome.wildcard("staging dir creation failed: " + e.getMessage());
       }
-    }
 
-    boolean degraded = readAgentDegraded(session, priorGraph);
-
-    List<Path> sourceFiles = collectSourceFiles(project);
-    Path projectBase = projectBase(project);
-    Map<RelPath, byte[]> currentHashes = hashAll(projectBase, sourceFiles);
-    Set<RelPath> currentFiles = new LinkedHashSet<>(currentHashes.keySet());
-
-    Set<String> testClasses = collectTestClassNames(project, session, integration);
-
-    Set<RelPath> resourceRoots = collectResourceRoots(project, projectBase);
-
-    TestSelection.Inputs in =
-        new TestSelection.Inputs(
-            priorGraph.hashes(),
-            priorGraph,
-            currentFiles,
-            currentHashes,
-            testClasses,
-            degraded,
-            resourceRoots);
-    TestSelection.Result selection = TestSelection.select(in);
-
-    runOpportunisticGc(cacheBase, CullProperties.cacheRetention(session));
-
-    String sessionId = UUID.randomUUID().toString();
-    Path stagingRoot = CullProperties.observationsRoot(session, project);
-    Path stagingDir =
-        stagingRoot != null
-            ? stagingRoot.resolve(".staging-" + sessionId)
-            : cacheBase.resolve(".staging-" + sessionId);
-    try {
-      Files.createDirectories(stagingDir);
-    } catch (IOException e) {
-      lock.release();
-      return SelectionOutcome.wildcard("staging dir creation failed: " + e.getMessage());
-    }
-
-    Set<String> selected = selection.selectedTests;
-    if (crossEligible && !selection.bootstrapped) {
-      // Hash only the classes B previously depended on (changedCrossRefs reads
-      // exactly those keys), not the entire upstream output.
-      Map<CrossRef, byte[]> currentUpstream =
-          ReactorSiblings.hash(crossIndex, priorGraph.upstreamHashes().keySet());
-      Set<CrossRef> changedExternal =
-          changedCrossRefs(priorGraph.upstreamHashes(), currentUpstream);
-      Set<String> impacted = priorGraph.testsImpactedByCrossRefs(changedExternal);
-      impacted.retainAll(testClasses);
-      if (!impacted.isEmpty()) {
-        // FULL: rerun only the downstream tests whose cross-module dependency
-        // closure reaches a changed reactor-sibling class. The stable key and
-        // graph are kept and the snapshot refreshes on commit.
-        selected = new HashSet<>(selected);
-        selected.addAll(impacted);
+      Set<String> selected = selection.selectedTests;
+      if (crossEligible && !selection.bootstrapped) {
+        // Hash only the classes B previously depended on (changedCrossRefs reads
+        // exactly those keys), not the entire upstream output.
+        Map<CrossRef, byte[]> currentUpstream =
+            ReactorSiblings.hash(crossIndex, priorGraph.upstreamHashes().keySet());
+        Set<CrossRef> changedExternal =
+            changedCrossRefs(priorGraph.upstreamHashes(), currentUpstream);
+        Set<String> impacted = priorGraph.testsImpactedByCrossRefs(changedExternal);
+        impacted.retainAll(testClasses);
+        if (!impacted.isEmpty()) {
+          // FULL: rerun only the downstream tests whose cross-module dependency
+          // closure reaches a changed reactor-sibling class. The stable key and
+          // graph are kept and the snapshot refreshes on commit.
+          selected = new HashSet<>(selected);
+          selected.addAll(impacted);
+        }
       }
+      boolean wildcard = false;
+      String wildcardReason = null;
+      if (fallbackRunAll) {
+        selected = new HashSet<>(testClasses);
+        wildcard = true;
+      } else if (!testClasses.isEmpty() && selected.size() >= testClasses.size()) {
+        wildcard = true;
+      }
+      // Coverage-retention bootstrap: when this phase records retained JaCoCo
+      // coverage but no baseline exists yet (first run after enabling retention,
+      // or a cache that predates it), a partial run would let the report flap to
+      // the executed subset on a clean build — and persisting that subset back
+      // would keep it degraded. Run the whole suite once to capture a complete
+      // baseline; subsequent runs seed it and select normally.
+      if (!wildcard
+          && !testClasses.isEmpty()
+          && CoverageRetention.baselineNeedsBootstrap(
+              project, session, projectChecksum, integration, cacheBase)) {
+        selected = new HashSet<>(testClasses);
+        wildcard = true;
+        wildcardReason = "coverage baseline bootstrap";
+      }
+
+      boolean xmlReportsDisabled = xmlReportsDisabled(project);
+
+      Map<String, String> siblingStrings = new LinkedHashMap<>();
+      for (Map.Entry<String, Path> e : reactorSiblings.entrySet()) {
+        siblingStrings.put(e.getKey(), e.getValue().toString());
+      }
+
+      SessionState state =
+          new SessionState(
+              projectChecksum,
+              cacheBase,
+              stagingDir,
+              projectBase,
+              Path.of(project.getBuild().getDirectory()),
+              Path.of(project.getBuild().getOutputDirectory()),
+              Path.of(project.getBuild().getTestOutputDirectory()),
+              CullProperties.cacheRetention(session),
+              wildcard,
+              degraded,
+              xmlReportsDisabled,
+              selected,
+              currentHashes,
+              resourceRoots,
+              siblingStrings,
+              crossEligible ? crossMode.name() : "OFF",
+              testClasses);
+
+      persistSessionState(project, state, integration);
+
+      CullSession cs =
+          new CullSession(
+              project,
+              cacheBase,
+              stagingDir,
+              projectChecksum,
+              priorGraph,
+              currentHashes,
+              selected,
+              testClasses,
+              resourceRoots,
+              wildcard,
+              lock,
+              degraded,
+              CullProperties.cacheRetention(session));
+      cs.enableCrossModule(reactorSiblings, crossEligible);
+      CullSessionRegistry.put(project, cs, integration);
+
+      // Seed JaCoCo's destFile with the retained baseline so this run's (possibly
+      // empty) subset is unioned into the full-suite coverage rather than
+      // overwriting it. Inert when JaCoCo is absent or in overwrite mode.
+      CoverageRetention.restore(project, session, projectChecksum, integration, cacheBase);
+
+      return new SelectionOutcome(
+          selected, wildcard, sessionId, stagingDir, projectChecksum, wildcardReason);
     }
-    boolean wildcard = false;
-    String wildcardReason = null;
-    if (fallbackRunAll) {
-      selected = new HashSet<>(testClasses);
-      wildcard = true;
-    } else if (!testClasses.isEmpty() && selected.size() >= testClasses.size()) {
-      wildcard = true;
-    }
-    // Coverage-retention bootstrap: when this phase records retained JaCoCo
-    // coverage but no baseline exists yet (first run after enabling retention,
-    // or a cache that predates it), a partial run would let the report flap to
-    // the executed subset on a clean build — and persisting that subset back
-    // would keep it degraded. Run the whole suite once to capture a complete
-    // baseline; subsequent runs seed it and select normally.
-    if (!wildcard
-        && !testClasses.isEmpty()
-        && CoverageRetention.baselineNeedsBootstrap(
-            project, session, projectChecksum, integration, cacheBase)) {
-      selected = new HashSet<>(testClasses);
-      wildcard = true;
-      wildcardReason = "coverage baseline bootstrap";
-    }
-
-    boolean xmlReportsDisabled = xmlReportsDisabled(project);
-
-    Map<String, String> siblingStrings = new LinkedHashMap<>();
-    for (Map.Entry<String, Path> e : reactorSiblings.entrySet()) {
-      siblingStrings.put(e.getKey(), e.getValue().toString());
-    }
-
-    SessionState state =
-        new SessionState(
-            projectChecksum,
-            cacheBase,
-            stagingDir,
-            projectBase,
-            Path.of(project.getBuild().getDirectory()),
-            Path.of(project.getBuild().getOutputDirectory()),
-            Path.of(project.getBuild().getTestOutputDirectory()),
-            CullProperties.cacheRetention(session),
-            wildcard,
-            degraded,
-            xmlReportsDisabled,
-            selected,
-            currentHashes,
-            resourceRoots,
-            siblingStrings,
-            crossEligible ? crossMode.name() : "OFF",
-            testClasses);
-
-    persistSessionState(project, state, integration);
-
-    CullSession cs =
-        new CullSession(
-            project,
-            cacheBase,
-            stagingDir,
-            projectChecksum,
-            priorGraph,
-            currentHashes,
-            selected,
-            testClasses,
-            resourceRoots,
-            wildcard,
-            lock,
-            degraded,
-            CullProperties.cacheRetention(session));
-    cs.enableCrossModule(reactorSiblings, crossEligible);
-    CullSessionRegistry.put(project, cs, integration);
-
-    // Seed JaCoCo's destFile with the retained baseline so this run's (possibly
-    // empty) subset is unioned into the full-suite coverage rather than
-    // overwriting it. Inert when JaCoCo is absent or in overwrite mode.
-    CoverageRetention.restore(project, session, projectChecksum, integration, cacheBase);
-
-    return new SelectionOutcome(
-        selected, wildcard, sessionId, stagingDir, projectChecksum, wildcardReason);
   }
 
   /** Per-module cache directory: {@code <cacheRoot>/<groupId-as-path>/<artifactId>}. */

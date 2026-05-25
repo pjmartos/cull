@@ -195,7 +195,13 @@ public final class CullSession {
   }
 
   public static CullSession fromState(SessionState state) {
-    Path stateFile = state.cacheBaseDir.resolve(state.projectChecksum + ".state.bin");
+    return fromState(state, false);
+  }
+
+  public static CullSession fromState(SessionState state, boolean integration) {
+    Path stateFile =
+        state.cacheBaseDir.resolve(
+            state.projectChecksum + (integration ? ".it" : "") + ".state.bin");
     TestGraph priorGraph = TestGraph.empty();
     if (Files.isRegularFile(stateFile)) {
       try {
@@ -310,8 +316,12 @@ public final class CullSession {
   }
 
   public void commit() {
+    commit(false);
+  }
+
+  public void commit(boolean integration) {
     try {
-      doCommit();
+      doCommit(integration);
     } catch (IOException e) {
       throw new IllegalStateException("commit failed", e);
     } finally {
@@ -337,7 +347,7 @@ public final class CullSession {
     }
   }
 
-  private void doCommit() throws IOException {
+  private void doCommit(boolean integration) throws IOException {
     List<Observations.Fork> forks = Observations.readDirectory(stagingDir);
     boolean legacyFanout = Boolean.getBoolean("cull.attribution.legacyFanout");
     Map<String, Set<String>> runtimeClasses =
@@ -441,7 +451,7 @@ public final class CullSession {
     byte[] encoded = TestGraphCodec.encode(newGraph);
 
     Files.createDirectories(stagingDir);
-    Path stagingFile = stagingDir.resolve("new.state.bin");
+    Path stagingFile = stagingDir.resolve((integration ? "it." : "") + "new.state.bin");
     Files.write(
         stagingFile,
         encoded,
@@ -449,11 +459,12 @@ public final class CullSession {
         StandardOpenOption.TRUNCATE_EXISTING,
         StandardOpenOption.WRITE);
 
-    Path target = cacheBaseDir.resolve(projectChecksum + ".state.bin");
+    Path target = cacheBaseDir.resolve(projectChecksum + (integration ? ".it" : "") + ".state.bin");
     Files.createDirectories(cacheBaseDir);
     commitMove(stagingFile, target);
 
-    Path lastUsed = cacheBaseDir.resolve(projectChecksum + ".last_used");
+    Path lastUsed =
+        cacheBaseDir.resolve(projectChecksum + (integration ? ".it" : "") + ".last_used");
     Files.write(
         lastUsed,
         Instant.now().toString().getBytes(StandardCharsets.UTF_8),

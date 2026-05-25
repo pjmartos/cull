@@ -26,11 +26,12 @@ import org.codehaus.plexus.util.xml.Xpp3Dom;
 public final class ProjectChecksum {
 
   private static final Set<String> PHASE_AT_OR_BEFORE_TEST = phaseSetAtOrBeforeTest();
+  private static final Set<String> PHASE_AT_OR_BEFORE_VERIFY = phaseSetAtOrBeforeVerify();
 
   private ProjectChecksum() {}
 
   public static String compute(MavenProject project, MavenSession session) {
-    return compute(project, session, false);
+    return compute(project, session, false, false);
   }
 
   /**
@@ -40,7 +41,10 @@ public final class ProjectChecksum {
    * alongside this module's own changed files.
    */
   public static String compute(
-      MavenProject project, MavenSession session, boolean excludeReactorSiblingContent) {
+      MavenProject project,
+      MavenSession session,
+      boolean integration,
+      boolean excludeReactorSiblingContent) {
     try {
       ChecksumExclusions exclusions = ChecksumExclusions.load(project, session);
       byte[] gCompile =
@@ -52,7 +56,12 @@ public final class ProjectChecksum {
           hashArtifacts(filterByScope(project, "test"), session, excludeReactorSiblingContent);
       byte[] gProvided =
           hashArtifacts(filterByScope(project, "provided"), session, excludeReactorSiblingContent);
-      byte[] gPlugins = hashRelevantPlugins(project, session, exclusions);
+      byte[] gPlugins =
+          hashRelevantPlugins(
+              project,
+              session,
+              exclusions,
+              integration ? PHASE_AT_OR_BEFORE_VERIFY : PHASE_AT_OR_BEFORE_TEST);
       byte[] gPolicy = Merkle.sha256(exclusions.fingerprint());
       byte[] root = Merkle.sha256(gCompile, gRuntime, gTest, gProvided, gPlugins, gPolicy);
       return Hex.encode(root);
@@ -123,11 +132,14 @@ public final class ProjectChecksum {
   }
 
   private static byte[] hashRelevantPlugins(
-      MavenProject project, MavenSession session, ChecksumExclusions exclusions)
+      MavenProject project,
+      MavenSession session,
+      ChecksumExclusions exclusions,
+      Set<String> applicablePhases)
       throws IOException {
     List<Plugin> plugins = new ArrayList<>();
     for (Plugin p : project.getBuildPlugins()) {
-      if (isRelevant(p)) {
+      if (isRelevant(p, applicablePhases)) {
         plugins.add(p);
       }
     }
@@ -206,10 +218,10 @@ public final class ProjectChecksum {
     return base == null ? null : Path.of(base);
   }
 
-  private static boolean isRelevant(Plugin p) {
+  private static boolean isRelevant(Plugin p, Set<String> applicablePhases) {
     for (PluginExecution e : p.getExecutions()) {
       String phase = e.getPhase();
-      if (phase != null && PHASE_AT_OR_BEFORE_TEST.contains(phase)) {
+      if (phase != null && applicablePhases.contains(phase)) {
         return true;
       }
       if (phase == null) {
@@ -412,6 +424,17 @@ public final class ProjectChecksum {
     s.add("test-compile");
     s.add("process-test-classes");
     s.add("test");
+    return s;
+  }
+
+  private static Set<String> phaseSetAtOrBeforeVerify() {
+    Set<String> s = new LinkedHashSet<>(phaseSetAtOrBeforeTest());
+    s.add("prepare-package");
+    s.add("package");
+    s.add("pre-integration-test");
+    s.add("integration-test");
+    s.add("post-integration-test");
+    s.add("verify");
     return s;
   }
 }
